@@ -88,14 +88,11 @@ export default function SelectionOverlay({ onCapture, onCancel, screenshotDataUr
       return;
     }
 
-    // 获取屏幕 DPI 缩放比例
-    const dpr = window.devicePixelRatio || 1;
-
     onCapture({
-      x: Math.round(x * dpr),
-      y: Math.round(y * dpr),
-      width: Math.round(width * dpr),
-      height: Math.round(height * dpr),
+      x: Math.round(x),
+      y: Math.round(y),
+      width: Math.round(width),
+      height: Math.round(height),
     });
 
     setStartPos(null);
@@ -119,7 +116,7 @@ export default function SelectionOverlay({ onCapture, onCancel, screenshotDataUr
       className="fixed inset-0 cursor-crosshair"
       style={{
         backgroundImage: `url(${screenshotDataUrl})`,
-        backgroundSize: 'contain',
+        backgroundSize: '100% 100%',
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
         backgroundRepeat: 'no-repeat',
       }}
@@ -136,22 +133,21 @@ export default function SelectionOverlay({ onCapture, onCancel, screenshotDataUr
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-400 mr-1">宽高比:</span>
-          {ASPECT_RATIOS.map(({ value, label }) => (
-            <button
-              key={value}
-              onClick={(e) => {
-                e.stopPropagation();
-                setAspectRatio(value);
-              }}
-              className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
-                aspectRatio === value
-                  ? 'bg-indigo-500 text-white font-medium'
-                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+          <select
+            value={aspectRatio}
+            onChange={(e) => {
+              e.stopPropagation();
+              setAspectRatio(e.target.value as AspectRatio);
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className='bg-slate-700 text-white text-xs rounded-md px-2 py-1 border-0 outline-none'
+          >
+            <option value='free'>自由 (跟随截图)</option>
+            <option value='3:4'>3:4</option>
+            <option value='4:3'>4:3</option>
+            <option value='9:16'>9:16</option>
+            <option value='16:9'>16:9</option>
+          </select>
           <button
             onClick={(e) => {
               e.stopPropagation();

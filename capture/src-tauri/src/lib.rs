@@ -38,6 +38,7 @@ pub struct DpiInfo {
 pub struct AppState {
     pub capture_area: Mutex<Option<CaptureArea>>,
     pub screenshot_data: Mutex<Option<Vec<u8>>>,
+    pub current_shortcut: Mutex<String>,
 }
 
 impl Default for AppState {
@@ -45,6 +46,7 @@ impl Default for AppState {
         Self {
             capture_area: Mutex::new(None),
             screenshot_data: Mutex::new(None),
+            current_shortcut: Mutex::new('Ctrl+Shift+Space'.to_string()),
         }
     }
 }
@@ -239,6 +241,32 @@ fn create_tray(app: &tauri::AppHandle<Wry>) -> Result<(), tauri::Error> {
     Ok(())
 }
 
+#[tauri::command]
+fn update_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+
+    app.global_shortcut().unregister_all().map_err(|e| e.to_string())?;
+
+    let shortcut_clone = shortcut.clone();
+    app.global_shortcut()
+        .on_shortcut(shortcut.as_str(), move |app, _shortcut, _event| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.emit("trigger-screenshot", ());
+            }
+        })
+        .map_err(|e| e.to_string())?;
+
+    // 更新状态
+    if let Some(state) = app.try_state::<AppState>() {
+        let mut current_shortcut = state.current_shortcut.lock().map_err(|e| e.to_string())?;
+        *current_shortcut = shortcut_clone;
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -272,7 +300,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_dpi_info,
-            capture_screen
+            capture_screen,
+            update_shortcut
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

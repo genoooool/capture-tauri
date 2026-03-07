@@ -75,3 +75,12 @@ export function onScreenshotTrigger(callback: () => void): () => void {
     unlistenPromise.then((unlistenFn) => unlistenFn());
   };
 }
+
+export async function updateShortcut(shortcut: string): Promise<void> {
+  try {
+    await invoke<void>('update_shortcut', { shortcut });
+  } catch (error) {
+    console.error('Failed to update shortcut:', error);
+    throw error;
+  }
+}

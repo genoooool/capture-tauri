@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Preset, CaptureArea } from './types';
 import { DEFAULT_PRESETS, loadPresets, savePresets } from './types';
 import { canvasToPng } from './services/imageProcessor';
-import { getDpiInfo, captureScreen, copyToClipboard, saveToFile } from './services/tauriCommands';
+import { getDpiInfo, captureScreen, copyToClipboard, saveToFile, onScreenshotTrigger, updateShortcut } from './services/tauriCommands';
 import SelectionOverlay from './components/SelectionOverlay';
 import ImagePreview from './components/ImagePreview';
 import ConfigPanel from './components/ConfigPanel';
@@ -17,6 +17,8 @@ function App() {
   const [finalCanvas, setFinalCanvas] = useState<HTMLCanvasElement | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [shortcut, setShortcut] = useState(() => localStorage.getItem('capture-shortcut') || 'Ctrl+Shift+Space');
+  const [isRecordingShortcut, setIsRecordingShortcut] = useState(false);
 
   // 加载自定义预设
   useEffect(() => {
@@ -24,6 +26,18 @@ function App() {
     if (stored.length > 0) {
       setCustomPresets(stored);
     }
+  }, []);
+
+  // 注册全局快捷键监听
+  useEffect(() => {
+    return onScreenshotTrigger(startCapture);
+  }, [startCapture]);
+
+  // 加载保存的快捷键并注册
+  useEffect(() => {
+    const savedShortcut = localStorage.getItem('capture-shortcut') || 'Ctrl+Shift+Space';
+    setShortcut(savedShortcut);
+    updateShortcut(savedShortcut).catch(console.error);
   }, []);
 
   // 显示通知
@@ -165,6 +179,68 @@ function App() {
     }
   }, [showNotification]);
 
+  // 处理快捷键录制
+  const handleKeyDownForShortcut = useCallback((e: React.KeyboardEvent) => {
+    if (!isRecordingShortcut) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Escape 取消录制
+    if (e.key === 'Escape') {
+      setIsRecordingShortcut(false);
+      return;
+    }
+
+    // 构建快捷键字符串
+    const parts: string[] = [];
+    if (e.ctrlKey) parts.push('Ctrl');
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+    if (e.metaKey) parts.push('Meta');
+
+    // 处理特殊键
+    let key = e.key;
+    if (key === ' ') key = 'Space';
+    if (key === 'Control' || key === 'Alt' || key === 'Shift' || key === 'Meta') {
+      // 只按修饰键不确认
+      return;
+    }
+
+    parts.push(key);
+
+    const newShortcut = parts.join('+');
+
+    // Enter 确认保存
+    if (e.key === 'Enter') {
+      localStorage.setItem('capture-shortcut', newShortcut);
+      setShortcut(newShortcut);
+      updateShortcut(newShortcut).catch(console.error);
+      setIsRecordingShortcut(false);
+      showNotification(`快捷键已保存：${newShortcut}`);
+    }
+  }, [isRecordingShortcut, showNotification]);
+
+  // 开始录制快捷键
+  const startRecordingShortcut = useCallback(() => {
+    setIsRecordingShortcut(true);
+  }, []);
+
+  // 保存快捷键
+  const saveRecordedShortcut = useCallback(() => {
+    if (shortcut) {
+      localStorage.setItem('capture-shortcut', shortcut);
+      updateShortcut(shortcut).catch(console.error);
+      setIsRecordingShortcut(false);
+      showNotification(`快捷键已保存：${shortcut}`);
+    }
+  }, [shortcut, showNotification]);
+
+  // 取消录制快捷键
+  const cancelRecordingShortcut = useCallback(() => {
+    setIsRecordingShortcut(false);
+  }, []);
+
   // 取消选区
   const handleCancelOverlay = useCallback(() => {
     setShowOverlay(false);
@@ -177,8 +253,40 @@ function App() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-[1800px] mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold text-slate-800">Capture</h1>
-            <span className="text-xs text-slate-400">截图美化工具</span>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-slate-800">Capture</h1>
+              <span className="text-xs text-slate-400">截图美化工具</span>
+            </div>
+            {/* 快捷键设置 */}
+            <div className="flex items-center gap-2 ml-4 pl-4 border-l border-slate-200">
+              <span className="text-xs text-slate-500">快捷键:</span>
+              {isRecordingShortcut ? (
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-indigo-600 font-medium animate-pulse">录制中...</span>
+                  <button
+                    onClick={saveRecordedShortcut}
+                    className="text-xs bg-indigo-500 hover:bg-indigo-600 text-white px-2 py-0.5 rounded transition-colors"
+                  >
+                    保存
+                  </button>
+                  <button
+                    onClick={cancelRecordingShortcut}
+                    className="text-xs bg-slate-200 hover:bg-slate-300 text-slate-600 px-2 py-0.5 rounded transition-colors"
+                  >
+                    取消
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={startRecordingShortcut}
+                  onKeyDown={handleKeyDownForShortcut}
+                  className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded transition-colors cursor-pointer"
+                  title="点击录制新快捷键"
+                >
+                  {shortcut}
+                </button>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -189,7 +297,7 @@ function App() {
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
               </svg>
-              截图 (Ctrl+Shift+Space)
+              截图
             </button>
             {finalCanvas && (
               <>

@@ -39,13 +39,6 @@
     "createUpdaterArtifacts": false
   },
   "plugins": {
-    "global-shortcut": {
-      "shortcuts": [
-        {
-          "shortcut": "Ctrl+Shift+Space",
-          "action": "trigger-screenshot"
-        }
-      ]
-    }
+    "global-shortcut": {}
   }
 }

@@ -46,7 +46,7 @@ impl Default for AppState {
         Self {
             capture_area: Mutex::new(None),
             screenshot_data: Mutex::new(None),
-            current_shortcut: Mutex::new('Ctrl+Shift+Space'.to_string()),
+            current_shortcut: Mutex::new("Ctrl+Shift+Space".to_string()),
         }
     }
 }

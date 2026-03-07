@@ -254,26 +254,16 @@ pub fn run() {
 
             // 注册全局快捷键 (v2 API)
             let shortcut = "Ctrl+Shift+Space";
-            let app_handle = app.handle().clone();
 
-            let global_shortcut = app.global_shortcut();
-            match global_shortcut.register(shortcut) {
-                Ok(_) => {
-                    // 注册成功，设置回调
-                    app_handle
-                        .on_shortcut(shortcut, move |app, _shortcut, _event| {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                                let _ = window.emit("trigger-screenshot", ());
-                            }
-                        })
-                        .unwrap_or_else(|e| {
-                            eprintln!("Failed to set shortcut callback: {}", e);
-                        });
+            match app.global_shortcut().on_shortcut(shortcut, move |app, _shortcut, _event| {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                    let _ = window.emit("trigger-screenshot", ());
                 }
+            }) {
+                Ok(_) => {}
                 Err(e) => {
-                    // 注册失败，记录错误（可能是快捷键冲突）
                     eprintln!("Failed to register shortcut '{}': {}", shortcut, e);
                 }
             }

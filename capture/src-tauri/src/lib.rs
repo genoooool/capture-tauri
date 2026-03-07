@@ -1,0 +1,278 @@
+use base64::{engine::general_purpose, Engine as _};
+use image::{ImageBuffer, Rgba};
+use image::codecs::png::PngEncoder;
+use image::ImageEncoder;
+use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager, Wry,
+};
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
+
+#[cfg(target_os = "windows")]
+use windows::{
+    Win32::Foundation::*,
+    Win32::Graphics::Gdi::*,
+    Win32::UI::HiDpi::GetDpiForSystem,
+};
+
+// 截图选区结构
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CaptureArea {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+// DPI 信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DpiInfo {
+    pub scale_x: f64,
+    pub scale_y: f64,
+}
+
+// 应用状态
+pub struct AppState {
+    pub capture_area: Mutex<Option<CaptureArea>>,
+    pub screenshot_data: Mutex<Option<Vec<u8>>>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            capture_area: Mutex::new(None),
+            screenshot_data: Mutex::new(None),
+        }
+    }
+}
+
+// 获取 DPI 缩放比例
+#[tauri::command]
+#[cfg(target_os = "windows")]
+fn get_dpi_info() -> Result<DpiInfo, String> {
+    unsafe {
+        let dpi = GetDpiForSystem();
+        let scale = dpi as f64 / 96.0;
+        Ok(DpiInfo {
+            scale_x: scale,
+            scale_y: scale,
+        })
+    }
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "windows"))]
+fn get_dpi_info() -> Result<DpiInfo, String> {
+    Ok(DpiInfo {
+        scale_x: 1.0,
+        scale_y: 1.0,
+    })
+}
+
+// 截取屏幕指定区域
+#[tauri::command]
+#[cfg(target_os = "windows")]
+fn capture_screen(area: CaptureArea) -> Result<String, String> {
+    unsafe {
+        // 获取屏幕 DC
+        let hdc_screen = GetDC(HWND(0));
+        if hdc_screen.is_invalid() {
+            return Err("Failed to get screen DC".to_string());
+        }
+
+        // 创建兼容 DC
+        let hdc_mem = CreateCompatibleDC(hdc_screen);
+        if hdc_mem.is_invalid() {
+            ReleaseDC(HWND(0), hdc_screen);
+            return Err("Failed to create compatible DC".to_string());
+        }
+
+        // 创建兼容位图
+        let hbitmap = CreateCompatibleBitmap(hdc_screen, area.width, area.height);
+        if hbitmap.is_invalid() {
+            DeleteDC(hdc_mem);
+            ReleaseDC(HWND(0), hdc_screen);
+            return Err("Failed to create compatible bitmap".to_string());
+        }
+
+        // 选择位图到内存 DC
+        let old_bitmap = SelectObject(hdc_mem, hbitmap);
+
+        // 使用 BitBlt 复制屏幕区域
+        let _ = BitBlt(
+            hdc_mem,
+            0,
+            0,
+            area.width,
+            area.height,
+            hdc_screen,
+            area.x,
+            area.y,
+            SRCCOPY,
+        );
+
+        // 恢复旧位图
+        SelectObject(hdc_mem, old_bitmap);
+
+        // 释放屏幕 DC
+        ReleaseDC(HWND(0), hdc_screen);
+
+        // 获取位图数据
+        let buffer_size = (area.width * area.height * 4) as usize;
+        let mut buffer: Vec<u8> = vec![0u8; buffer_size.max(1)];
+
+        let mut bitmap_info = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: area.width,
+                biHeight: -area.height, // 负值表示从上到下
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                biSizeImage: 0,
+                biXPelsPerMeter: 0,
+                biYPelsPerMeter: 0,
+                biClrUsed: 0,
+                biClrImportant: 0,
+            },
+            bmiColors: [RGBQUAD {
+                rgbBlue: 0,
+                rgbGreen: 0,
+                rgbRed: 0,
+                rgbReserved: 0,
+            }],
+        };
+
+        let result = GetDIBits(
+            hdc_mem,
+            hbitmap,
+            0,
+            area.height as u32,
+            Some(buffer.as_mut_ptr().cast()),
+            &mut bitmap_info,
+            DIB_RGB_COLORS,
+        );
+
+        // 清理
+        DeleteObject(hbitmap);
+        DeleteDC(hdc_mem);
+
+        if result == 0 {
+            return Err("Failed to get bitmap bits".to_string());
+        }
+
+        // Windows BitBlt 返回 BGRA，转换为 RGBA
+        for chunk in buffer.chunks_mut(4) {
+            chunk.swap(0, 2); // B <-> R
+        }
+
+        // 创建 RGBA 图像
+        let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
+            ImageBuffer::from_raw(area.width as u32, area.height as u32, buffer)
+                .ok_or("Failed to create image from buffer")?;
+
+        // 编码为 PNG
+        let mut png_data: Vec<u8> = Vec::new();
+        let cursor = std::io::Cursor::new(&mut png_data);
+        PngEncoder::new(cursor)
+            .write_image(
+                img.as_raw(),
+                area.width as u32,
+                area.height as u32,
+                image::ExtendedColorType::Rgba8,
+            )
+            .map_err(|e| format!("Failed to encode PNG: {}", e))?;
+
+        // 转换为 Base64
+        let base64_data = general_purpose::STANDARD.encode(&png_data);
+        Ok(format!("data:image/png;base64,{}", base64_data))
+    }
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "windows"))]
+fn capture_screen(_area: CaptureArea) -> Result<String, String> {
+    Err("Screenshot is only supported on Windows".to_string())
+}
+
+// 创建系统托盘
+fn create_tray(app: &tauri::AppHandle<Wry>) -> Result<(), tauri::Error> {
+    let show_i = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let quit_i = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+
+    let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+
+    let _tray = TrayIconBuilder::new()
+        .icon(app.default_window_icon().unwrap().clone())
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(move |app, event| match event.id.as_ref() {
+            "show" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            "quit" => {
+                app.exit(0);
+            }
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        })
+        .build(app)?;
+
+    Ok(())
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .manage(AppState::default())
+        .setup(|app| {
+            // 创建系统托盘
+            create_tray(&app.handle())?;
+
+            // 注册全局快捷键
+            let shortcut = "Ctrl+Shift+Space";
+            let app_handle = app.handle().clone();
+
+            app_handle
+                .global_shortcut()
+                .on_shortcut(shortcut, move |app, _shortcut, _event| {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        let _ = window.emit("trigger-screenshot", ());
+                    }
+                })
+                .expect("Failed to register shortcut handler");
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            get_dpi_info,
+            capture_screen
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

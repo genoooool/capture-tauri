@@ -28,12 +28,7 @@ function App() {
     }
   }, []);
 
-  // 注册全局快捷键监听
-  useEffect(() => {
-    return onScreenshotTrigger(startCapture);
-  }, [startCapture]);
-
-  // 加载保存的快捷键并注册
+  // 加载保存的快捷键并注册（startCapture 定义后会在下方 useEffect 里注册监听）
   useEffect(() => {
     const savedShortcut = localStorage.getItem('capture-shortcut') || 'Ctrl+Shift+Space';
     setShortcut(savedShortcut);
@@ -240,6 +235,11 @@ function App() {
   const cancelRecordingShortcut = useCallback(() => {
     setIsRecordingShortcut(false);
   }, []);
+
+  // 注册全局快捷键监听（startCapture 已定义，放在这里确保顺序正确）
+  useEffect(() => {
+    return onScreenshotTrigger(startCapture);
+  }, [startCapture]);
 
   // 取消选区
   const handleCancelOverlay = useCallback(() => {

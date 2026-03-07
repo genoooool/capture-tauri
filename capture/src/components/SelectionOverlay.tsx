@@ -1,16 +1,52 @@
 import { useState, useRef, useCallback } from 'react';
 import type { CaptureArea } from '../types';
 
+type AspectRatio = 'free' | '3:4' | '4:3' | '9:16' | '16:9';
+
 interface SelectionOverlayProps {
   onCapture: (area: CaptureArea) => void;
   onCancel: () => void;
   screenshotDataUrl: string;
 }
 
+const ASPECT_RATIOS: { value: AspectRatio; label: string; ratio: number | null }[] = [
+  { value: 'free', label: '自由', ratio: null },
+  { value: '3:4', label: '3:4', ratio: 3 / 4 },
+  { value: '4:3', label: '4:3', ratio: 4 / 3 },
+  { value: '9:16', label: '9:16', ratio: 9 / 16 },
+  { value: '16:9', label: '16:9', ratio: 16 / 9 },
+];
+
 export default function SelectionOverlay({ onCapture, onCancel, screenshotDataUrl }: SelectionOverlayProps) {
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
   const [currentPos, setCurrentPos] = useState<{ x: number; y: number } | null>(null);
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('free');
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const applyAspectRatio = useCallback((startX: number, startY: number, endX: number, endY: number, ratio: number | null) => {
+    if (ratio === null) return { x: endX, y: endY };
+
+    const dx = endX - startX;
+    const dy = endY - startY;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+
+    let newWidth: number;
+    let newHeight: number;
+
+    if (absDx / ratio > absDy) {
+      newHeight = absDy;
+      newWidth = newHeight * ratio;
+    } else {
+      newWidth = absDx;
+      newHeight = newWidth / ratio;
+    }
+
+    return {
+      x: startX + (dx > 0 ? newWidth : -newWidth),
+      y: startY + (dy > 0 ? newHeight : -newHeight),
+    };
+  }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (!containerRef.current) return;
@@ -23,11 +59,19 @@ export default function SelectionOverlay({ onCapture, onCancel, screenshotDataUr
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!containerRef.current || !startPos) return;
-    setCurrentPos({
-      x: e.clientX - containerRef.current.getBoundingClientRect().left,
-      y: e.clientY - containerRef.current.getBoundingClientRect().top,
-    });
-  }, [startPos]);
+    const bounds = containerRef.current.getBoundingClientRect();
+    let endX = e.clientX - bounds.left;
+    let endY = e.clientY - bounds.top;
+
+    const selectedRatio = ASPECT_RATIOS.find(r => r.value === aspectRatio)?.ratio ?? null;
+    if (selectedRatio !== null) {
+      const adjusted = applyAspectRatio(startPos.x, startPos.y, endX, endY, selectedRatio);
+      endX = adjusted.x;
+      endY = adjusted.y;
+    }
+
+    setCurrentPos({ x: endX, y: endY });
+  }, [startPos, aspectRatio, applyAspectRatio]);
 
   const handleMouseUp = useCallback(() => {
     if (!containerRef.current || !startPos || !currentPos) return;
@@ -84,39 +128,84 @@ export default function SelectionOverlay({ onCapture, onCancel, screenshotDataUr
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      {/* 顶部提示栏 */}
+      {/* 顶部工具栏 */}
       <div className="absolute top-0 left-0 right-0 bg-slate-900/80 backdrop-blur-sm text-white px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <span className="text-sm font-medium">拖动鼠标选择截图区域</span>
           <span className="text-xs text-slate-400">Esc 取消</span>
         </div>
-        <button
-          onClick={onCancel}
-          className="px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
-        >
-          取消
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-400 mr-1">宽高比:</span>
+          {ASPECT_RATIOS.map(({ value, label }) => (
+            <button
+              key={value}
+              onClick={(e) => {
+                e.stopPropagation();
+                setAspectRatio(value);
+              }}
+              className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                aspectRatio === value
+                  ? 'bg-indigo-500 text-white font-medium'
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancel();
+            }}
+            className="ml-4 px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
+          >
+            取消
+          </button>
+        </div>
       </div>
 
       {/* 选区 */}
       {selectionRect && (
         <>
-          {/* 半透明遮罩 - 使用 inset 实现挖空效果 */}
+          {/* 4 个半透明遮罩 - 覆盖选区外的区域 */}
+          {/* 上方遮罩 */}
           <div
-            className="absolute pointer-events-none"
+            className="absolute bg-black/50 pointer-events-none"
             style={{
               left: 0,
               top: 0,
               right: 0,
+              height: selectionRect.y,
+            }}
+          />
+          {/* 下方遮罩 */}
+          <div
+            className="absolute bg-black/50 pointer-events-none"
+            style={{
+              left: 0,
+              top: selectionRect.y + selectionRect.height,
+              right: 0,
               bottom: 0,
-              background: `rgba(0, 0, 0, 0.5)`,
-              clipPath: `polygon(
-                0 0, 100% 0, 100% 100%, 0 100%,
-                ${selectionRect.x}px ${selectionRect.y}px,
-                ${selectionRect.x + selectionRect.width}px ${selectionRect.y}px,
-                ${selectionRect.x + selectionRect.width}px ${selectionRect.y + selectionRect.height}px,
-                ${selectionRect.x}px ${selectionRect.y + selectionRect.height}px
-              )`,
+            }}
+          />
+          {/* 左方遮罩 */}
+          <div
+            className="absolute bg-black/50 pointer-events-none"
+            style={{
+              left: 0,
+              top: selectionRect.y,
+              width: selectionRect.x,
+              height: selectionRect.height,
+            }}
+          />
+          {/* 右方遮罩 */}
+          <div
+            className="absolute bg-black/50 pointer-events-none"
+            style={{
+              left: selectionRect.x + selectionRect.width,
+              top: selectionRect.y,
+              right: 0,
+              height: selectionRect.height,
             }}
           />
 

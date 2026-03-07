@@ -38,7 +38,5 @@
     ],
     "createUpdaterArtifacts": false
   },
-  "plugins": {
-    "global-shortcut": {}
-  }
+  "plugins": {}
 }

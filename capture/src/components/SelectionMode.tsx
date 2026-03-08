@@ -1,27 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { doSelectionCapture, getSelectionScreenshot } from '../services/tauriCommands';
+import { doSelectionCapture } from '../services/tauriCommands';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 export default function SelectionMode() {
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
   const [currentPos, setCurrentPos] = useState<{ x: number; y: number } | null>(null);
-  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  // 加载全屏背景图
-  useEffect(() => {
-    async function loadBackground() {
-      try {
-        console.log('[SelectionMode] Loading background screenshot...');
-        const bg = await getSelectionScreenshot();
-        console.log('[SelectionMode] Background loaded, length:', bg.length);
-        setBackgroundImage(bg);
-      } catch (error) {
-        console.error('[SelectionMode] Failed to load background:', error);
-      }
-    }
-    loadBackground();
-  }, []);
 
   // 监听 Escape 键关闭窗口
   useEffect(() => {
@@ -96,34 +80,15 @@ export default function SelectionMode() {
       ref={containerRef}
       className="fixed inset-0 cursor-crosshair"
       style={{
-        // 先使用红色背景测试 overlay 是否渲染
-        backgroundColor: 'rgba(255, 0, 0, 0.5)',
+        backgroundColor: 'rgba(0, 0, 0, 0.3)',
       }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      {/* 调试信息 */}
-      <div style={{ position: 'fixed', top: 100, left: 100, color: 'white', zIndex: 100, fontSize: 20 }}>
-        DEBUG: bg loaded = {backgroundImage ? `yes (${backgroundImage.length} chars)` : 'no'}
-      </div>
-
-      {/* 背景图 - 铺满整个屏幕 */}
-      {backgroundImage && (
-        <img
-          src={backgroundImage}
-          alt="Screenshot background"
-          className="fixed inset-0 w-full h-full object-cover pointer-events-none"
-          style={{
-            zIndex: 0,
-          }}
-          draggable={false}
-        />
-      )}
-
       {/* 顶部工具栏 */}
-      <div className="absolute top-0 left-0 right-0 bg-slate-900/80 backdrop-blur-sm text-white px-4 py-3 flex items-center justify-between" style={{ zIndex: 10 }}>
+      <div className="absolute top-0 left-0 right-0 bg-slate-900/80 backdrop-blur-sm text-white px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <span className="text-sm font-medium">拖动鼠标选择截图区域</span>
           <span className="text-xs text-slate-400">Esc 取消</span>
@@ -152,7 +117,6 @@ export default function SelectionMode() {
               top: 0,
               right: 0,
               height: selectionRect.y,
-              zIndex: 1,
             }}
           />
           {/* 下方遮罩 */}
@@ -163,7 +127,6 @@ export default function SelectionMode() {
               top: selectionRect.y + selectionRect.height,
               right: 0,
               bottom: 0,
-              zIndex: 1,
             }}
           />
           {/* 左方遮罩 */}
@@ -174,7 +137,6 @@ export default function SelectionMode() {
               top: selectionRect.y,
               width: selectionRect.x,
               height: selectionRect.height,
-              zIndex: 1,
             }}
           />
           {/* 右方遮罩 */}
@@ -185,7 +147,6 @@ export default function SelectionMode() {
               top: selectionRect.y,
               right: 0,
               height: selectionRect.height,
-              zIndex: 1,
             }}
           />
 
@@ -197,7 +158,6 @@ export default function SelectionMode() {
               top: selectionRect.y,
               width: selectionRect.width,
               height: selectionRect.height,
-              zIndex: 2,
             }}
           >
             {/* 角落标记 */}
@@ -213,7 +173,6 @@ export default function SelectionMode() {
             style={{
               left: selectionRect.x,
               top: selectionRect.y - 28,
-              zIndex: 3,
             }}
           >
             {Math.round(selectionRect.width)} × {Math.round(selectionRect.height)}

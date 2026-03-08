@@ -114,26 +114,6 @@ export function onSelectionCaptured(callback: (event: any) => void): () => void 
   };
 }
 
-// 启动选区模式（隐藏主窗口、截全屏、打开 overlay）
-export async function startSelectionCapture(): Promise<void> {
-  try {
-    await invoke<void>('start_selection_capture');
-  } catch (error) {
-    console.error('Failed to start selection capture:', error);
-    throw error;
-  }
-}
-
-// 获取全屏截图（供 overlay 渲染背景）
-export async function getSelectionScreenshot(): Promise<string> {
-  try {
-    return await invoke<string>('get_selection_screenshot');
-  } catch (error) {
-    console.error('Failed to get selection screenshot:', error);
-    throw error;
-  }
-}
-
 // 执行选区截图
 export async function doSelectionCapture(area: CaptureArea): Promise<void> {
   try {

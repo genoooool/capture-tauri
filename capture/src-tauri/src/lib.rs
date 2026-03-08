@@ -305,7 +305,7 @@ fn show_selection_window(app: tauri::AppHandle) -> Result<(), String> {
         let screen_height = windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(
             windows::Win32::UI::WindowsAndMessaging::SM_CYSCREEN,
         );
-        let _ = window.set_size(tauri::PhysicalPosition::new(screen_width, screen_height));
+        let _ = window.set_size(tauri::PhysicalSize::new(screen_width, screen_height));
         let _ = window.set_position(tauri::PhysicalPosition::new(0, 0));
     }
 

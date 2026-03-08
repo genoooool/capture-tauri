@@ -6,7 +6,10 @@ import "./index.css";
 
 // 检测是否为 selection-overlay 窗口
 async function initApp() {
-  console.log('[main.tsx] window.location:', window.location.href, window.location.hash);
+  const logs: string[] = [];
+  logs.push(`[main.tsx] href: ${window.location.href}`);
+  logs.push(`[main.tsx] hash: ${window.location.hash}`);
+  logs.push(`[main.tsx] pathname: ${window.location.pathname}`);
 
   // 1. 首先检查 hash 路由
   const isHashSelection = window.location.hash === '#/selection' || window.location.hash === '#selection';
@@ -20,20 +23,28 @@ async function initApp() {
 
   // 4. 尝试通过 Tauri API 获取窗口 label
   let isTauriSelectionWindow = false;
+  let tauriLabel = 'unknown';
   try {
     // 动态导入避免在非 Tauri 环境下报错
     const windowApi = await import('@tauri-apps/api/window');
     const currentWindow = windowApi.getCurrentWindow();
-    const label = currentWindow.label;
-    isTauriSelectionWindow = label === 'selection-overlay';
-    console.log('[main.tsx] Tauri window label:', label);
+    tauriLabel = currentWindow.label;
+    isTauriSelectionWindow = tauriLabel === 'selection-overlay';
+    logs.push(`[main.tsx] Tauri window label: ${tauriLabel}`);
   } catch (e) {
-    console.log('[main.tsx] Not running in Tauri or failed to get window info');
+    logs.push(`[main.tsx] Not running in Tauri or failed to get window info: ${e}`);
   }
 
   const isSelectionWindow = isHashSelection || isPathnameSelection || isQueryParamSelection || isTauriSelectionWindow;
 
-  console.log('[main.tsx] isSelectionWindow:', isSelectionWindow);
+  logs.push(`[main.tsx] isHashSelection: ${isHashSelection}`);
+  logs.push(`[main.tsx] isPathnameSelection: ${isPathnameSelection}`);
+  logs.push(`[main.tsx] isQueryParamSelection: ${isQueryParamSelection}`);
+  logs.push(`[main.tsx] isTauriSelectionWindow: ${isTauriSelectionWindow}`);
+  logs.push(`[main.tsx] isSelectionWindow: ${isSelectionWindow}`);
+
+  // 将所有日志打印到控制台
+  logs.forEach(log => console.log(log));
 
   // 渲染应用
   const root = document.getElementById("root") as HTMLElement;

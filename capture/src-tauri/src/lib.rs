@@ -294,9 +294,12 @@ fn update_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), String
 fn show_selection_window(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
 
+    println!("[show_selection_window] Starting to create selection window...");
+
     // 检查窗口是否已存在
     if app.get_webview_window("selection-overlay").is_some() {
         // 窗口已存在，直接显示并聚焦
+        println!("[show_selection_window] Window already exists, showing...");
         if let Some(window) = app.get_webview_window("selection-overlay") {
             let _ = window.show();
             let _ = window.set_focus();
@@ -313,6 +316,7 @@ fn show_selection_window(app: tauri::AppHandle) -> Result<(), String> {
         let screen_height = windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(
             windows::Win32::UI::WindowsAndMessaging::SM_CYSCREEN,
         );
+        println!("[show_selection_window] Screen size: {}x{}", screen_width, screen_height);
         (screen_width as f64, screen_height as f64)
     };
 
@@ -321,6 +325,7 @@ fn show_selection_window(app: tauri::AppHandle) -> Result<(), String> {
 
     // 创建新的透明全屏窗口，使用 label 来标识这是选区窗口
     // 前端会通过 window.__TAURI__.window.label 来判断
+    println!("[show_selection_window] Creating window with label 'selection-overlay'...");
     let window = WebviewWindowBuilder::new(
         &app,
         "selection-overlay",
@@ -334,6 +339,11 @@ fn show_selection_window(app: tauri::AppHandle) -> Result<(), String> {
     .skip_taskbar(true)
     .transparent(true)
     .build();
+
+    match &window {
+        Ok(w) => println!("[show_selection_window] Window created successfully: {:?}", w.label()),
+        Err(e) => println!("[show_selection_window] Failed to create window: {}", e),
+    }
 
     if let Err(e) = window {
         return Err(format!("Failed to create selection window: {}", e));

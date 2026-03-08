@@ -276,7 +276,7 @@ fn start_selection_capture(app: tauri::AppHandle) -> Result<(), String> {
     println!("[start_selection_capture] Saving screenshot to AppState...");
     if let Some(state) = app.try_state::<AppState>() {
         let mut selection_screenshot = state.selection_screenshot.lock().map_err(|e| e.to_string())?;
-        *selection_screenshot = Some(fullscreen_screenshot.into_bytes());
+        *selection_screenshot = Some(fullscreen_screenshot);
     }
 
     // 4. 检查 overlay 窗口是否已存在
@@ -372,11 +372,7 @@ fn get_selection_screenshot(app: tauri::AppHandle) -> Result<String, String> {
     if let Some(state) = app.try_state::<AppState>() {
         let selection_screenshot = state.selection_screenshot.lock().map_err(|e| e.to_string())?;
         match &*selection_screenshot {
-            Some(data) => {
-                // 将 Vec<u8> 转换回 String
-                let base64_str = String::from_utf8_lossy(data).to_string();
-                Ok(base64_str)
-            }
+            Some(data) => Ok(data.clone()),
             None => Err("No screenshot found in AppState".to_string()),
         }
     } else {

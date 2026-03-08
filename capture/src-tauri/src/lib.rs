@@ -292,43 +292,26 @@ fn update_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), String
 // 显示透明全屏选区窗口
 #[tauri::command]
 fn show_selection_window(app: tauri::AppHandle) -> Result<(), String> {
-    use tauri::{WebviewUrl, WebviewWindowBuilder};
+    // 获取预定义的 selection-overlay 窗口
+    let window = app.get_webview_window("selection-overlay")
+        .ok_or("selection-overlay window not found")?;
 
-    // 检查窗口是否已存在
-    if app.get_webview_window("selection-overlay").is_some() {
-        // 窗口已存在，直接显示并聚焦
-        if let Some(window) = app.get_webview_window("selection-overlay") {
-            let _ = window.show();
-            let _ = window.set_focus();
-        }
-        return Ok(());
+    // 设置窗口尺寸为屏幕尺寸
+    #[cfg(target_os = "windows")]
+    unsafe {
+        let screen_width = windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(
+            windows::Win32::UI::WindowsAndMessaging::SM_CXSCREEN,
+        );
+        let screen_height = windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(
+            windows::Win32::UI::WindowsAndMessaging::SM_CYSCREEN,
+        );
+        let _ = window.set_size(tauri::PhysicalPosition::new(screen_width, screen_height));
+        let _ = window.set_position(tauri::PhysicalPosition::new(0, 0));
     }
 
-    // 获取屏幕尺寸
-    let monitor = app.primary_monitor()
-        .map_err(|e| format!("Failed to get monitor: {}", e))?
-        .ok_or("No monitor found")?;
-    let width = monitor.size().width as f64;
-    let height = monitor.size().height as f64;
-
-    // 创建新的透明全屏窗口
-    let window = WebviewWindowBuilder::new(
-        &app,
-        "selection-overlay",
-        WebviewUrl::App("index.html#/selection".into()),
-    )
-    .title("Selection Overlay")
-    .position(0.0, 0.0)
-    .inner_size(width, height)
-    .decorations(false)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .transparent(true)
-    .build();
-
-    if let Err(e) = window {
-        return Err(format!("Failed to create selection window: {}", e));
-    }
+    // 显示并聚焦窗口
+    let _ = window.show();
+    let _ = window.set_focus();
 
     Ok(())
 }

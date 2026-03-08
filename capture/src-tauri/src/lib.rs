@@ -304,6 +304,13 @@ fn show_selection_window(app: tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
+    // 获取屏幕尺寸
+    let monitor = app.primary_monitor()
+        .map_err(|e| format!("Failed to get monitor: {}", e))?
+        .ok_or("No monitor found")?;
+    let width = monitor.size().width as f64;
+    let height = monitor.size().height as f64;
+
     // 创建新的透明全屏窗口
     let window = WebviewWindowBuilder::new(
         &app,
@@ -311,8 +318,8 @@ fn show_selection_window(app: tauri::AppHandle) -> Result<(), String> {
         WebviewUrl::App("index.html#/selection".into()),
     )
     .title("Selection Overlay")
-    .inner_size(1920.0, 1080.0)
-    .fullscreen(true)
+    .position(0.0, 0.0)
+    .inner_size(width, height)
     .decorations(false)
     .always_on_top(true)
     .skip_taskbar(true)

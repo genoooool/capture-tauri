@@ -7,6 +7,7 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react()],
+  base: './', // 使用相对路径，确保 Tauri 打包后能正确加载资源
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

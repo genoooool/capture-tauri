@@ -5,7 +5,6 @@ import SelectionMode from "./components/SelectionMode";
 import "./index.css";
 
 // 检测是否为 selection-overlay 窗口
-// Tauri v2 中通过 window.__TAURI__ 获取窗口信息
 async function initApp() {
   console.log('[main.tsx] window.location:', window.location.href, window.location.hash);
 
@@ -22,9 +21,10 @@ async function initApp() {
   // 4. 尝试通过 Tauri API 获取窗口 label
   let isTauriSelectionWindow = false;
   try {
-    const { getCurrent } = await import('@tauri-apps/api/window');
-    const currentWindow = getCurrent();
-    const label = await currentWindow?.label;
+    // 动态导入避免在非 Tauri 环境下报错
+    const windowApi = await import('@tauri-apps/api/window');
+    const currentWindow = windowApi.getCurrentWindow();
+    const label = currentWindow.label;
     isTauriSelectionWindow = label === 'selection-overlay';
     console.log('[main.tsx] Tauri window label:', label);
   } catch (e) {

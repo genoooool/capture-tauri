@@ -292,12 +292,52 @@ fn update_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), String
 // 显示透明全屏选区窗口
 #[tauri::command]
 fn show_selection_window(app: tauri::AppHandle) -> Result<(), String> {
-    // 获取 selection-overlay 窗口并显示
-    let window = app.get_webview_window("selection-overlay")
-        .ok_or("Selection overlay window not found")?;
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
 
-    let _ = window.show();
-    let _ = window.set_focus();
+    // 检查窗口是否已存在
+    if app.get_webview_window("selection-overlay").is_some() {
+        // 窗口已存在，直接显示并聚焦
+        if let Some(window) = app.get_webview_window("selection-overlay") {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        return Ok(());
+    }
+
+    // 获取屏幕尺寸
+    #[cfg(target_os = "windows")]
+    let (width, height) = unsafe {
+        let screen_width = windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(
+            windows::Win32::UI::WindowsAndMessaging::SM_CXSCREEN,
+        );
+        let screen_height = windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(
+            windows::Win32::UI::WindowsAndMessaging::SM_CYSCREEN,
+        );
+        (screen_width as f64, screen_height as f64)
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let (width, height) = (1920.0, 1080.0);
+
+    // 创建新的透明全屏窗口，使用 label 来标识这是选区窗口
+    // 前端会通过 window.__TAURI__.window.label 来判断
+    let window = WebviewWindowBuilder::new(
+        &app,
+        "selection-overlay",
+        WebviewUrl::App("index.html".into()),
+    )
+    .title("Selection Overlay")
+    .inner_size(width, height)
+    .position(0.0, 0.0)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .transparent(true)
+    .build();
+
+    if let Err(e) = window {
+        return Err(format!("Failed to create selection window: {}", e));
+    }
 
     Ok(())
 }

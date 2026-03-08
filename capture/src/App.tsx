@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Preset, CaptureArea } from './types';
 import { DEFAULT_PRESETS, loadPresets, savePresets } from './types';
 import { canvasToPng } from './services/imageProcessor';
-import { getDpiInfo, captureScreen, copyToClipboard, saveToFile, onScreenshotTrigger, updateShortcut } from './services/tauriCommands';
+import { captureScreen, copyToClipboard, saveToFile, onScreenshotTrigger, updateShortcut, showSelectionWindow, onSelectionCaptured } from './services/tauriCommands';
 import SelectionOverlay from './components/SelectionOverlay';
 import ImagePreview from './components/ImagePreview';
 import ConfigPanel from './components/ConfigPanel';
@@ -12,6 +12,7 @@ function App() {
   // 状态管理
   const [showOverlay, setShowOverlay] = useState(false);
   const [baseScreenshot, setBaseScreenshot] = useState<string | null>(null);
+  const [screenshotDimensions, setScreenshotDimensions] = useState<{width: number, height: number} | null>(null);
   const [currentPreset, setCurrentPreset] = useState<Preset>(DEFAULT_PRESETS[0]);
   const [customPresets, setCustomPresets] = useState<Preset[]>([]);
   const [finalCanvas, setFinalCanvas] = useState<HTMLCanvasElement | null>(null);
@@ -47,8 +48,20 @@ function App() {
     setIsProcessing(true);
 
     try {
+      // 计算 DPI 缩放比例
+      // 选区坐标是 CSS 像素，需要转换为物理像素
+      const scaleX = screenshotDimensions ? screenshotDimensions.width / window.innerWidth : 1;
+      const scaleY = screenshotDimensions ? screenshotDimensions.height / window.innerHeight : 1;
+
+      const scaledArea = {
+        x: Math.round(area.x * scaleX),
+        y: Math.round(area.y * scaleY),
+        width: Math.round(area.width * scaleX),
+        height: Math.round(area.height * scaleY),
+      };
+
       // 获取截图数据
-      const screenshotData = await captureScreen(area);
+      const screenshotData = await captureScreen(scaledArea);
       setBaseScreenshot(screenshotData);
     } catch (error) {
       console.error('Failed to capture screen:', error);
@@ -56,7 +69,7 @@ function App() {
     } finally {
       setIsProcessing(false);
     }
-  }, [showNotification]);
+  }, [showNotification, screenshotDimensions]);
 
   // 处理预设变更
   const handlePresetChange = useCallback((newPreset: Preset) => {
@@ -151,23 +164,11 @@ function App() {
     setFinalCanvas(canvas);
   }, []);
 
-  // 开始截图
+  // 开始截图 - 使用直接屏幕选区方式
   const startCapture = useCallback(async () => {
     try {
-      // 先截取整个屏幕作为选区背景
-      const dpiInfo = await getDpiInfo();
-      const screenWidth = window.screen.width * dpiInfo.scale_x;
-      const screenHeight = window.screen.height * dpiInfo.scale_y;
-
-      const fullScreenshot = await captureScreen({
-        x: 0,
-        y: 0,
-        width: Math.round(screenWidth),
-        height: Math.round(screenHeight),
-      });
-
-      setBaseScreenshot(fullScreenshot);
-      setShowOverlay(true);
+      // 显示透明全屏选区窗口
+      await showSelectionWindow();
     } catch (error) {
       console.error('Failed to start capture:', error);
       showNotification('无法启动截图', 'error');
@@ -184,6 +185,17 @@ function App() {
     // Escape 取消录制
     if (e.key === 'Escape') {
       setIsRecordingShortcut(false);
+      return;
+    }
+
+    // Enter 确认保存 - 必须在添加 key 之前检查，否则 Enter 会被加入快捷键
+    if (e.key === 'Enter') {
+      if (shortcut) {
+        localStorage.setItem('capture-shortcut', shortcut);
+        updateShortcut(shortcut).catch(console.error);
+        setIsRecordingShortcut(false);
+        showNotification(`快捷键已保存：${shortcut}`);
+      }
       return;
     }
 
@@ -206,15 +218,13 @@ function App() {
 
     const newShortcut = parts.join('+');
 
-    // Enter 确认保存
-    if (e.key === 'Enter') {
-      localStorage.setItem('capture-shortcut', newShortcut);
-      setShortcut(newShortcut);
-      updateShortcut(newShortcut).catch(console.error);
-      setIsRecordingShortcut(false);
-      showNotification(`快捷键已保存：${newShortcut}`);
-    }
-  }, [isRecordingShortcut, showNotification]);
+    // 自动保存新快捷键（无需再按 Enter）
+    localStorage.setItem('capture-shortcut', newShortcut);
+    setShortcut(newShortcut);
+    updateShortcut(newShortcut).catch(console.error);
+    setIsRecordingShortcut(false);
+    showNotification(`快捷键已保存：${newShortcut}`);
+  }, [isRecordingShortcut, shortcut, showNotification]);
 
   // 开始录制快捷键
   const startRecordingShortcut = useCallback(() => {
@@ -241,10 +251,24 @@ function App() {
     return onScreenshotTrigger(startCapture);
   }, [startCapture]);
 
+  // 监听选区截图完成事件（从 selection-overlay 窗口）
+  useEffect(() => {
+    const unlisten = onSelectionCaptured((event) => {
+      const screenshotData = event.payload as string;
+      setBaseScreenshot(screenshotData);
+      showNotification('截图已完成', 'success');
+    });
+
+    return () => {
+      unlisten();
+    };
+  }, [showNotification]);
+
   // 取消选区
   const handleCancelOverlay = useCallback(() => {
     setShowOverlay(false);
     setBaseScreenshot(null);
+    setScreenshotDimensions(null);
   }, []);
 
   return (

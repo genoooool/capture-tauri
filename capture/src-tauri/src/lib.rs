@@ -245,24 +245,112 @@ fn create_tray(app: &tauri::AppHandle<Wry>) -> Result<(), tauri::Error> {
 fn update_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), String> {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
+    // 先注销所有快捷键
     app.global_shortcut().unregister_all().map_err(|e| e.to_string())?;
 
     let shortcut_clone = shortcut.clone();
-    app.global_shortcut()
+
+    // 注册新快捷键
+    let result = app.global_shortcut()
         .on_shortcut(shortcut.as_str(), move |app, _shortcut, _event| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
                 let _ = window.emit("trigger-screenshot", ());
             }
-        })
-        .map_err(|e| e.to_string())?;
+        });
+
+    if let Err(e) = result {
+        // 注册失败，尝试恢复原快捷键
+        eprintln!("Failed to register shortcut '{}': {}", shortcut_clone, e);
+        return Err(format!("Failed to register shortcut '{}': {}", shortcut_clone, e));
+    }
 
     // 更新状态
     if let Some(state) = app.try_state::<AppState>() {
         let mut current_shortcut = state.current_shortcut.lock().map_err(|e| e.to_string())?;
         *current_shortcut = shortcut_clone;
     }
+
+    Ok(())
+}
+
+// 显示透明全屏选区窗口
+#[tauri::command]
+fn show_selection_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    // 检查窗口是否已存在
+    if app.get_webview_window("selection-overlay").is_some() {
+        // 窗口已存在，直接显示并聚焦
+        if let Some(window) = app.get_webview_window("selection-overlay") {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        return Ok(());
+    }
+
+    // 创建新的透明全屏窗口
+    let window = WebviewWindowBuilder::new(
+        &app,
+        "selection-overlay",
+        WebviewUrl::App("index.html#/selection".into()),
+    )
+    .title("Selection Overlay")
+    .inner_size(1920.0, 1080.0)
+    .fullscreen(true)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .transparent(true)
+    .build();
+
+    if let Err(e) = window {
+        return Err(format!("Failed to create selection window: {}", e));
+    }
+
+    Ok(())
+}
+
+// 执行选区截图
+#[tauri::command]
+fn do_selection_capture(
+    app: tauri::AppHandle,
+    area: CaptureArea,
+) -> Result<(), String> {
+    use tauri::Emitter;
+
+    // 获取 DPI 信息
+    let dpi_info = get_dpi_info()?;
+
+    // 将 CSS 像素转换为物理像素
+    let physical_area = CaptureArea {
+        x: (area.x as f64 * dpi_info.scale_x) as i32,
+        y: (area.y as f64 * dpi_info.scale_y) as i32,
+        width: (area.width as f64 * dpi_info.scale_x) as i32,
+        height: (area.height as f64 * dpi_info.scale_y) as i32,
+    };
+
+    // 执行截图
+    let screenshot_data = capture_screen(physical_area)?;
+
+    // 获取主窗口
+    let main_window = app.get_webview_window("main")
+        .ok_or("Main window not found")?;
+
+    // 发送事件到主窗口，包含截图数据
+    main_window
+        .emit("selection-captured", screenshot_data)
+        .map_err(|e| format!("Failed to emit event: {}", e))?;
+
+    // 关闭选区窗口
+    if let Some(selection_window) = app.get_webview_window("selection-overlay") {
+        let _ = selection_window.close();
+    }
+
+    // 显示并聚焦主窗口
+    let _ = main_window.show();
+    let _ = main_window.set_focus();
 
     Ok(())
 }
@@ -280,10 +368,15 @@ pub fn run() {
             // 创建系统托盘
             create_tray(&app.handle())?;
 
-            // 注册全局快捷键 (v2 API)
-            let shortcut = "Ctrl+Shift+Space";
+            // 从 AppState 读取保存的快捷键（默认 Ctrl+Shift+Space）
+            let state = app.state::<AppState>();
+            let shortcut = {
+                let current_shortcut = state.current_shortcut.lock().map_err(|e| e.to_string())?;
+                current_shortcut.clone()
+            };
 
-            match app.global_shortcut().on_shortcut(shortcut, move |app, _shortcut, _event| {
+            // 注册全局快捷键 (v2 API)
+            match app.global_shortcut().on_shortcut(shortcut.as_str(), move |app, _shortcut, _event| {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.set_focus();
@@ -301,7 +394,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_dpi_info,
             capture_screen,
-            update_shortcut
+            update_shortcut,
+            show_selection_window,
+            do_selection_capture,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

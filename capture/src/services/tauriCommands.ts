@@ -84,3 +84,32 @@ export async function updateShortcut(shortcut: string): Promise<void> {
     throw error;
   }
 }
+
+// 显示选区窗口
+export async function showSelectionWindow(): Promise<void> {
+  try {
+    await invoke<void>('show_selection_window');
+  } catch (error) {
+    console.error('Failed to show selection window:', error);
+    throw error;
+  }
+}
+
+// 监听选区截图完成事件
+export function onSelectionCaptured(callback: (event: any) => void): () => void {
+  const unlistenPromise = listen('selection-captured', callback);
+
+  return () => {
+    unlistenPromise.then((unlistenFn) => unlistenFn());
+  };
+}
+
+// 执行选区截图
+export async function doSelectionCapture(area: CaptureArea): Promise<void> {
+  try {
+    await invoke<void>('do_selection_capture', { area });
+  } catch (error) {
+    console.error('Failed to do selection capture:', error);
+    throw error;
+  }
+}

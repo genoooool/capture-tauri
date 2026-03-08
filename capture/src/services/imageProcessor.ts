@@ -101,28 +101,42 @@ function roundRectPath(
   ctx.closePath();
 }
 
-// 绘制阴影
+// 绘制阴影 - 在单独的 offscreen canvas 上绘制以避免被 clip 影响
 function drawShadow(
-  ctx: CanvasRenderingContext2D,
+  mainCtx: CanvasRenderingContext2D,
   x: number,
   y: number,
   width: number,
   height: number,
   borderRadius: number,
-  shadow: { color: string; blur: number; offsetX: number; offsetY: number }
+  shadow: { color: string; blur: number; offsetX: number; offsetY: number },
+  canvasWidth: number,
+  canvasHeight: number
 ) {
   const [r, g, b, a] = parseShadowColor(shadow.color);
 
-  ctx.save();
-  ctx.shadowColor = `rgba(${r}, ${g}, ${b}, ${a})`;
-  ctx.shadowBlur = shadow.blur;
-  ctx.shadowOffsetX = shadow.offsetX;
-  ctx.shadowOffsetY = shadow.offsetY;
+  // 创建离屏 canvas 专门用于绘制阴影
+  const offscreen = document.createElement('canvas');
+  offscreen.width = canvasWidth;
+  offscreen.height = canvasHeight;
+  const offCtx = offscreen.getContext('2d');
 
-  roundRectPath(ctx, x, y, width, height, borderRadius);
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.01)';
-  ctx.fill();
-  ctx.restore();
+  if (!offCtx) return;
+
+  offCtx.save();
+  offCtx.shadowColor = `rgba(${r}, ${g}, ${b}, ${a})`;
+  offCtx.shadowBlur = shadow.blur;
+  offCtx.shadowOffsetX = shadow.offsetX;
+  offCtx.shadowOffsetY = shadow.offsetY;
+
+  // 使用白色填充来产生阴影（白色与背景融合，只留下阴影）
+  roundRectPath(offCtx, x, y, width, height, borderRadius);
+  offCtx.fillStyle = 'rgba(255, 255, 255, 1)';
+  offCtx.fill();
+  offCtx.restore();
+
+  // 将阴影绘制到主 canvas
+  mainCtx.drawImage(offscreen, 0, 0);
 }
 
 // 主函数：生成美化后的图像
@@ -157,7 +171,7 @@ export function generateBeautifiedImage(
       // 1. 绘制背景
       drawBackground(ctx, canvasWidth, canvasHeight, background);
 
-      // 2. 绘制阴影（在内容下方）
+      // 2. 绘制阴影（使用离屏 canvas，在内容下方）
       drawShadow(
         ctx,
         padding,
@@ -165,7 +179,9 @@ export function generateBeautifiedImage(
         contentWidth,
         contentHeight,
         borderRadius,
-        shadow
+        shadow,
+        canvasWidth,
+        canvasHeight
       );
 
       // 3. 绘制圆角裁剪区域并放置截图

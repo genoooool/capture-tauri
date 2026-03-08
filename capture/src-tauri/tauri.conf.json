@@ -20,6 +20,20 @@
         "resizable": true,
         "center": true,
         "label": "main"
+      },
+      {
+        "title": "Selection Overlay",
+        "width": 1920,
+        "height": 1080,
+        "fullscreen": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "transparent": true,
+        "url": "index.html#/selection",
+        "label": "selection-overlay",
+        "hiddenTitle": true,
+        "visible": false
       }
     ],
     "security": {

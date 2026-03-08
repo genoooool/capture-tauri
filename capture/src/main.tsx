@@ -5,7 +5,6 @@ import SelectionMode from "./components/SelectionMode";
 import "./index.css";
 
 // 检测是否为 selection-overlay 窗口
-// Tauri v2 使用 URL hash 路由来区分窗口
 const isSelectionWindow = window.location.hash === '#/selection';
 
 if (isSelectionWindow) {

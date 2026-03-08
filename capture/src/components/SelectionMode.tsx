@@ -96,13 +96,19 @@ export default function SelectionMode() {
       ref={containerRef}
       className="fixed inset-0 cursor-crosshair"
       style={{
-        backgroundColor: backgroundImage ? '#000' : 'rgba(0, 0, 0, 0.3)',
+        // 先使用红色背景测试 overlay 是否渲染
+        backgroundColor: 'rgba(255, 0, 0, 0.5)',
       }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
+      {/* 调试信息 */}
+      <div style={{ position: 'fixed', top: 100, left: 100, color: 'white', zIndex: 100, fontSize: 20 }}>
+        DEBUG: bg loaded = {backgroundImage ? `yes (${backgroundImage.length} chars)` : 'no'}
+      </div>
+
       {/* 背景图 - 铺满整个屏幕 */}
       {backgroundImage && (
         <img

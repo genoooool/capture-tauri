@@ -255,6 +255,84 @@ fn create_tray(app: &tauri::AppHandle<Wry>) -> Result<(), tauri::Error> {
     Ok(())
 }
 
+// 启动选区模式：隐藏主窗口 → 截全屏图 → 保存 → 打开 overlay
+#[tauri::command]
+fn start_selection_capture(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    println!("[start_selection_capture] Starting selection capture flow...");
+
+    // 1. 先隐藏主窗口（避免把自己截进去）
+    if let Some(main_window) = app.get_webview_window("main") {
+        println!("[start_selection_capture] Hiding main window...");
+        let _ = main_window.hide();
+    }
+
+    // 2. 截取全屏图像
+    println!("[start_selection_capture] Capturing full screen...");
+    let fullscreen_screenshot = capture_screen(None)?;
+
+    // 3. 保存到 AppState
+    println!("[start_selection_capture] Saving screenshot to AppState...");
+    if let Some(state) = app.try_state::<AppState>() {
+        let mut selection_screenshot = state.selection_screenshot.lock().map_err(|e| e.to_string())?;
+        *selection_screenshot = Some(fullscreen_screenshot.into_bytes());
+    }
+
+    // 4. 检查 overlay 窗口是否已存在
+    if app.get_webview_window("selection-overlay").is_some() {
+        println!("[start_selection_capture] Overlay window already exists, showing and focusing...");
+        if let Some(window) = app.get_webview_window("selection-overlay") {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        return Ok(());
+    }
+
+    // 5. 获取屏幕尺寸
+    #[cfg(target_os = "windows")]
+    let (width, height) = unsafe {
+        let screen_width = windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(
+            windows::Win32::UI::WindowsAndMessaging::SM_CXSCREEN,
+        );
+        let screen_height = windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(
+            windows::Win32::UI::WindowsAndMessaging::SM_CYSCREEN,
+        );
+        println!("[start_selection_capture] Screen size: {}x{}", screen_width, screen_height);
+        (screen_width as f64, screen_height as f64)
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let (width, height) = (1920.0, 1080.0);
+
+    // 6. 创建新的透明全屏窗口，使用明确的 #/selection 路由
+    println!("[start_selection_capture] Creating overlay window with label 'selection-overlay'...");
+    let window = WebviewWindowBuilder::new(
+        &app,
+        "selection-overlay",
+        WebviewUrl::App("index.html#/selection".into()),
+    )
+    .title("Selection Overlay")
+    .inner_size(width, height)
+    .position(0.0, 0.0)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .transparent(true)
+    .build();
+
+    match &window {
+        Ok(w) => println!("[start_selection_capture] Overlay window created successfully: {:?}", w.label()),
+        Err(e) => println!("[start_selection_capture] Failed to create overlay window: {}", e),
+    }
+
+    if let Err(e) = window {
+        return Err(format!("Failed to create selection window: {}", e));
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 fn update_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), String> {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
@@ -264,13 +342,12 @@ fn update_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), String
 
     let shortcut_clone = shortcut.clone();
 
-    // 注册新快捷键
+    // 注册新快捷键 - 直接触发截图流程，不先显示主窗口
     let result = app.global_shortcut()
         .on_shortcut(shortcut.as_str(), move |app, _shortcut, _event| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-                let _ = window.emit("trigger-screenshot", ());
+            // 直接启动选区模式，不显示主窗口
+            if let Err(e) = start_selection_capture(app.clone()) {
+                eprintln!("Failed to start selection capture: {}", e);
             }
         });
 
@@ -289,76 +366,33 @@ fn update_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), String
     Ok(())
 }
 
-// 显示透明全屏选区窗口
+// 获取全屏截图（供 overlay 读取背景图）
 #[tauri::command]
-fn show_selection_window(app: tauri::AppHandle) -> Result<(), String> {
-    use tauri::{WebviewUrl, WebviewWindowBuilder};
-
-    println!("[show_selection_window] Starting to create selection window...");
-
-    // 检查窗口是否已存在
-    if app.get_webview_window("selection-overlay").is_some() {
-        // 窗口已存在，直接显示并聚焦
-        println!("[show_selection_window] Window already exists, showing...");
-        if let Some(window) = app.get_webview_window("selection-overlay") {
-            let _ = window.show();
-            let _ = window.set_focus();
+fn get_selection_screenshot(app: tauri::AppHandle) -> Result<String, String> {
+    if let Some(state) = app.try_state::<AppState>() {
+        let selection_screenshot = state.selection_screenshot.lock().map_err(|e| e.to_string())?;
+        match &*selection_screenshot {
+            Some(data) => {
+                // 将 Vec<u8> 转换回 String
+                let base64_str = String::from_utf8_lossy(data).to_string();
+                Ok(base64_str)
+            }
+            None => Err("No screenshot found in AppState".to_string()),
         }
-        return Ok(());
+    } else {
+        Err("AppState not available".to_string())
     }
-
-    // 获取屏幕尺寸
-    #[cfg(target_os = "windows")]
-    let (width, height) = unsafe {
-        let screen_width = windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(
-            windows::Win32::UI::WindowsAndMessaging::SM_CXSCREEN,
-        );
-        let screen_height = windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(
-            windows::Win32::UI::WindowsAndMessaging::SM_CYSCREEN,
-        );
-        println!("[show_selection_window] Screen size: {}x{}", screen_width, screen_height);
-        (screen_width as f64, screen_height as f64)
-    };
-
-    #[cfg(not(target_os = "windows"))]
-    let (width, height) = (1920.0, 1080.0);
-
-    // 创建新的透明全屏窗口，使用 label 来标识这是选区窗口
-    // 前端会通过 window.__TAURI__.window.label 来判断
-    println!("[show_selection_window] Creating window with label 'selection-overlay'...");
-    let window = WebviewWindowBuilder::new(
-        &app,
-        "selection-overlay",
-        WebviewUrl::App("index.html".into()),
-    )
-    .title("Selection Overlay")
-    .inner_size(width, height)
-    .position(0.0, 0.0)
-    .decorations(false)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .transparent(true)
-    .build();
-
-    match &window {
-        Ok(w) => println!("[show_selection_window] Window created successfully: {:?}", w.label()),
-        Err(e) => println!("[show_selection_window] Failed to create window: {}", e),
-    }
-
-    if let Err(e) = window {
-        return Err(format!("Failed to create selection window: {}", e));
-    }
-
-    Ok(())
 }
 
-// 执行选区截图
+// 执行选区截图（用户松开鼠标后调用）
 #[tauri::command]
 fn do_selection_capture(
     app: tauri::AppHandle,
     area: CaptureArea,
 ) -> Result<(), String> {
     use tauri::Emitter;
+
+    println!("[do_selection_capture] Capturing area: {:?}", area);
 
     // 获取 DPI 信息
     let dpi_info = get_dpi_info()?;
@@ -373,6 +407,7 @@ fn do_selection_capture(
 
     // 执行截图（传入 Some(area)）
     let screenshot_data = capture_screen(Some(physical_area))?;
+    println!("[do_selection_capture] Screenshot captured, size: {} bytes", screenshot_data.len());
 
     // 获取主窗口
     let main_window = app.get_webview_window("main")
@@ -385,10 +420,12 @@ fn do_selection_capture(
 
     // 关闭选区窗口
     if let Some(selection_window) = app.get_webview_window("selection-overlay") {
+        println!("[do_selection_capture] Closing overlay window...");
         let _ = selection_window.close();
     }
 
     // 显示并聚焦主窗口
+    println!("[do_selection_capture] Showing main window...");
     let _ = main_window.show();
     let _ = main_window.set_focus();
 
@@ -415,12 +452,11 @@ pub fn run() {
                 current_shortcut.clone()
             };
 
-            // 注册全局快捷键 (v2 API)
+            // 注册全局快捷键 - 直接触发截图流程，不先显示主窗口
             match app.global_shortcut().on_shortcut(shortcut.as_str(), move |app, _shortcut, _event| {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                    let _ = window.emit("trigger-screenshot", ());
+                // 直接启动选区模式
+                if let Err(e) = start_selection_capture(app.clone()) {
+                    eprintln!("Failed to start selection capture: {}", e);
                 }
             }) {
                 Ok(_) => {}
@@ -435,7 +471,8 @@ pub fn run() {
             get_dpi_info,
             capture_screen,
             update_shortcut,
-            show_selection_window,
+            start_selection_capture,
+            get_selection_screenshot,
             do_selection_capture,
         ])
         .run(tauri::generate_context!())

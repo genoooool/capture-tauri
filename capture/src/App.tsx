@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Preset, CaptureArea } from './types';
 import { DEFAULT_PRESETS, loadPresets, savePresets } from './types';
 import { canvasToPng } from './services/imageProcessor';
-import { captureScreen, copyToClipboard, saveToFile, onScreenshotTrigger, updateShortcut, showSelectionWindow, onSelectionCaptured } from './services/tauriCommands';
+import { captureScreen, copyToClipboard, saveToFile, onScreenshotTrigger, updateShortcut, startSelectionCapture, onSelectionCaptured } from './services/tauriCommands';
 import SelectionOverlay from './components/SelectionOverlay';
 import ImagePreview from './components/ImagePreview';
 import ConfigPanel from './components/ConfigPanel';
@@ -164,11 +164,11 @@ function App() {
     setFinalCanvas(canvas);
   }, []);
 
-  // 开始截图 - 使用直接屏幕选区方式
+  // 开始截图 - 使用新的选区模式（隐藏主窗口 → 截全屏 → 打开 overlay）
   const startCapture = useCallback(async () => {
     try {
-      // 显示透明全屏选区窗口
-      await showSelectionWindow();
+      // 启动选区模式（Rust 端会先隐藏主窗口，再截全屏，再打开 overlay）
+      await startSelectionCapture();
     } catch (error) {
       console.error('Failed to start capture:', error);
       showNotification('无法启动截图', 'error');

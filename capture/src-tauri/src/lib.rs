@@ -16,6 +16,7 @@ use windows::{
     Win32::Foundation::*,
     Win32::Graphics::Gdi::*,
     Win32::UI::HiDpi::GetDpiForSystem,
+    Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN},
 };
 
 // 截图选区结构
@@ -39,6 +40,7 @@ pub struct AppState {
     pub capture_area: Mutex<Option<CaptureArea>>,
     pub screenshot_data: Mutex<Option<Vec<u8>>>,
     pub current_shortcut: Mutex<String>,
+    pub selection_screenshot: Mutex<Option<String>>, // 存储全屏截图用于 overlay 显示
 }
 
 impl Default for AppState {
@@ -47,6 +49,7 @@ impl Default for AppState {
             capture_area: Mutex::new(None),
             screenshot_data: Mutex::new(None),
             current_shortcut: Mutex::new("Ctrl+Shift+Space".to_string()),
+            selection_screenshot: Mutex::new(None),
         }
     }
 }
@@ -74,29 +77,40 @@ fn get_dpi_info() -> Result<DpiInfo, String> {
     })
 }
 
-// 截取屏幕指定区域
+// 截取屏幕指定区域（支持全屏，当 area 为 None 时）
 #[tauri::command]
 #[cfg(target_os = "windows")]
-fn capture_screen(area: CaptureArea) -> Result<String, String> {
+fn capture_screen(area: Option<CaptureArea>) -> Result<String, String> {
     unsafe {
         // 获取屏幕 DC
-        let hdc_screen = GetDC(HWND(0));
+        let hdc_screen = GetDC(HWND(std::ptr::null_mut()));
         if hdc_screen.is_invalid() {
             return Err("Failed to get screen DC".to_string());
         }
 
+        // 如果没有指定区域，截取全屏
+        let (x, y, width, height) = match area {
+            Some(a) => (a.x, a.y, a.width, a.height),
+            None => {
+                // 获取屏幕尺寸
+                let screen_width = GetSystemMetrics(SM_CXSCREEN);
+                let screen_height = GetSystemMetrics(SM_CYSCREEN);
+                (0, 0, screen_width, screen_height)
+            }
+        };
+
         // 创建兼容 DC
         let hdc_mem = CreateCompatibleDC(hdc_screen);
         if hdc_mem.is_invalid() {
-            ReleaseDC(HWND(0), hdc_screen);
+            ReleaseDC(HWND(std::ptr::null_mut()), hdc_screen);
             return Err("Failed to create compatible DC".to_string());
         }
 
         // 创建兼容位图
-        let hbitmap = CreateCompatibleBitmap(hdc_screen, area.width, area.height);
+        let hbitmap = CreateCompatibleBitmap(hdc_screen, width, height);
         if hbitmap.is_invalid() {
-            DeleteDC(hdc_mem);
-            ReleaseDC(HWND(0), hdc_screen);
+            let _ = DeleteDC(hdc_mem);
+            ReleaseDC(HWND(std::ptr::null_mut()), hdc_screen);
             return Err("Failed to create compatible bitmap".to_string());
         }
 
@@ -108,11 +122,11 @@ fn capture_screen(area: CaptureArea) -> Result<String, String> {
             hdc_mem,
             0,
             0,
-            area.width,
-            area.height,
+            width,
+            height,
             hdc_screen,
-            area.x,
-            area.y,
+            x,
+            y,
             SRCCOPY,
         );
 
@@ -120,17 +134,17 @@ fn capture_screen(area: CaptureArea) -> Result<String, String> {
         SelectObject(hdc_mem, old_bitmap);
 
         // 释放屏幕 DC
-        ReleaseDC(HWND(0), hdc_screen);
+        ReleaseDC(HWND(std::ptr::null_mut()), hdc_screen);
 
         // 获取位图数据
-        let buffer_size = (area.width * area.height * 4) as usize;
+        let buffer_size = (width * height * 4) as usize;
         let mut buffer: Vec<u8> = vec![0u8; buffer_size.max(1)];
 
         let mut bitmap_info = BITMAPINFO {
             bmiHeader: BITMAPINFOHEADER {
                 biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: area.width,
-                biHeight: -area.height, // 负值表示从上到下
+                biWidth: width,
+                biHeight: -height, // 负值表示从上到下
                 biPlanes: 1,
                 biBitCount: 32,
                 biCompression: BI_RGB.0,
@@ -152,15 +166,15 @@ fn capture_screen(area: CaptureArea) -> Result<String, String> {
             hdc_mem,
             hbitmap,
             0,
-            area.height as u32,
+            height as u32,
             Some(buffer.as_mut_ptr().cast()),
             &mut bitmap_info,
             DIB_RGB_COLORS,
         );
 
         // 清理
-        DeleteObject(hbitmap);
-        DeleteDC(hdc_mem);
+        let _ = DeleteObject(hbitmap);
+        let _ = DeleteDC(hdc_mem);
 
         if result == 0 {
             return Err("Failed to get bitmap bits".to_string());
@@ -173,7 +187,7 @@ fn capture_screen(area: CaptureArea) -> Result<String, String> {
 
         // 创建 RGBA 图像
         let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
-            ImageBuffer::from_raw(area.width as u32, area.height as u32, buffer)
+            ImageBuffer::from_raw(width as u32, height as u32, buffer)
                 .ok_or("Failed to create image from buffer")?;
 
         // 编码为 PNG
@@ -182,8 +196,8 @@ fn capture_screen(area: CaptureArea) -> Result<String, String> {
         PngEncoder::new(cursor)
             .write_image(
                 img.as_raw(),
-                area.width as u32,
-                area.height as u32,
+                width as u32,
+                height as u32,
                 image::ExtendedColorType::Rgba8,
             )
             .map_err(|e| format!("Failed to encode PNG: {}", e))?;
@@ -196,7 +210,7 @@ fn capture_screen(area: CaptureArea) -> Result<String, String> {
 
 #[tauri::command]
 #[cfg(not(target_os = "windows"))]
-fn capture_screen(_area: CaptureArea) -> Result<String, String> {
+fn capture_screen(_area: Option<CaptureArea>) -> Result<String, String> {
     Err("Screenshot is only supported on Windows".to_string())
 }
 
@@ -331,8 +345,8 @@ fn do_selection_capture(
         height: (area.height as f64 * dpi_info.scale_y) as i32,
     };
 
-    // 执行截图
-    let screenshot_data = capture_screen(physical_area)?;
+    // 执行截图（传入 Some(area)）
+    let screenshot_data = capture_screen(Some(physical_area))?;
 
     // 获取主窗口
     let main_window = app.get_webview_window("main")

@@ -22,6 +22,16 @@ export async function captureScreen(area: CaptureArea): Promise<string> {
   }
 }
 
+// 截取全屏（用于 overlay 背景）
+export async function captureFullScreen(): Promise<string> {
+  try {
+    return await invoke<string>('capture_screen', { area: null });
+  } catch (error) {
+    console.error('Failed to capture full screen:', error);
+    throw error;
+  }
+}
+
 // 复制到剪贴板
 export async function copyToClipboard(imageData: Blob): Promise<void> {
   try {

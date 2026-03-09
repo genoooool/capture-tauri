@@ -40,7 +40,6 @@ pub struct AppState {
     pub capture_area: Mutex<Option<CaptureArea>>,
     pub screenshot_data: Mutex<Option<Vec<u8>>>,
     pub current_shortcut: Mutex<String>,
-    pub selection_screenshot: Mutex<Option<String>>, // 存储全屏截图用于 overlay 显示
 }
 
 impl Default for AppState {
@@ -49,7 +48,6 @@ impl Default for AppState {
             capture_area: Mutex::new(None),
             screenshot_data: Mutex::new(None),
             current_shortcut: Mutex::new("Ctrl+Shift+Space".to_string()),
-            selection_screenshot: Mutex::new(None),
         }
     }
 }
@@ -308,14 +306,6 @@ fn show_selection_window(app: tauri::AppHandle) -> Result<(), String> {
         let _ = window.set_size(tauri::PhysicalSize::new(screen_width, screen_height));
         let _ = window.set_position(tauri::PhysicalPosition::new(0, 0));
     }
-
-    // 先截取全屏作为背景
-    let screenshot_data = capture_screen(None)?;
-
-    // 将截图数据发送到前端窗口
-    window
-        .emit("selection-window-init", screenshot_data)
-        .map_err(|e| format!("Failed to emit init event: {}", e))?;
 
     // 显示并聚焦窗口
     let _ = window.show();

@@ -309,6 +309,14 @@ fn show_selection_window(app: tauri::AppHandle) -> Result<(), String> {
         let _ = window.set_position(tauri::PhysicalPosition::new(0, 0));
     }
 
+    // 先截取全屏作为背景
+    let screenshot_data = capture_screen(None)?;
+
+    // 将截图数据发送到前端窗口
+    window
+        .emit("selection-window-init", screenshot_data)
+        .map_err(|e| format!("Failed to emit init event: {}", e))?;
+
     // 显示并聚焦窗口
     let _ = window.show();
     let _ = window.set_focus();

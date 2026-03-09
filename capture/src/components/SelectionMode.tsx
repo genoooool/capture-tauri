@@ -1,11 +1,25 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { doSelectionCapture } from '../services/tauriCommands';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { listen } from '@tauri-apps/api/event';
 
 export default function SelectionMode() {
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
   const [currentPos, setCurrentPos] = useState<{ x: number; y: number } | null>(null);
+  const [screenshotDataUrl, setScreenshotDataUrl] = useState<string>('');
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // 监听 Rust 后端发送的截图数据
+  useEffect(() => {
+    const unlisten = listen('selection-window-init', (event) => {
+      const screenshotData = event.payload as string;
+      setScreenshotDataUrl(screenshotData);
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   // 监听 Escape 键关闭窗口
   useEffect(() => {
@@ -80,6 +94,9 @@ export default function SelectionMode() {
       ref={containerRef}
       className="fixed inset-0 cursor-crosshair"
       style={{
+        backgroundImage: screenshotDataUrl ? `url(${screenshotDataUrl})` : 'none',
+        backgroundSize: '100% 100%',
+        backgroundRepeat: 'no-repeat',
         backgroundColor: 'rgba(0, 0, 0, 0.3)',
       }}
       onMouseDown={handleMouseDown}

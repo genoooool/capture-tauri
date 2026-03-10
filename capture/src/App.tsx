@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Preset, CaptureArea } from './types';
 import { DEFAULT_PRESETS, loadPresets, savePresets } from './types';
 import { canvasToPng } from './services/imageProcessor';
-import { captureScreen, copyToClipboard, saveToFile, onScreenshotTrigger, updateShortcut, showSelectionWindow, onSelectionCaptured } from './services/tauriCommands';
+import { captureScreen, copyToClipboard, saveToFile, onScreenshotTrigger, updateShortcut, showSelectionWindow, onSelectionCaptured, onSelectionCancelled } from './services/tauriCommands';
 import SelectionOverlay from './components/SelectionOverlay';
 import ImagePreview from './components/ImagePreview';
 import ConfigPanel from './components/ConfigPanel';
@@ -263,6 +263,21 @@ function App() {
       unlisten();
     };
   }, [showNotification]);
+
+  // 监听选区取消事件（用户按 Escape 或点击取消）
+  useEffect(() => {
+    const unlisten = onSelectionCancelled(() => {
+      console.log('Selection cancelled');
+      // 清理状态，允许再次截图
+      setBaseScreenshot(null);
+      setScreenshotDimensions(null);
+      setShowOverlay(false);
+    });
+
+    return () => {
+      unlisten();
+    };
+  }, []);
 
   // 取消选区
   const handleCancelOverlay = useCallback(() => {

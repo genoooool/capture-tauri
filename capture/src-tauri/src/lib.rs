@@ -322,19 +322,11 @@ fn do_selection_capture(
 ) -> Result<(), String> {
     use tauri::Emitter;
 
-    // 获取 DPI 信息
-    let dpi_info = get_dpi_info()?;
-
-    // 将 CSS 像素转换为物理像素
-    let physical_area = CaptureArea {
-        x: (area.x as f64 * dpi_info.scale_x) as i32,
-        y: (area.y as f64 * dpi_info.scale_y) as i32,
-        width: (area.width as f64 * dpi_info.scale_x) as i32,
-        height: (area.height as f64 * dpi_info.scale_y) as i32,
-    };
+    // selection-overlay 窗口使用物理像素，无需 DPI 转换
+    // area 已经是物理像素坐标
 
     // 执行截图（传入 Some(area)）
-    let screenshot_data = capture_screen(Some(physical_area))?;
+    let screenshot_data = capture_screen(Some(area))?;
 
     // 获取主窗口
     let main_window = app.get_webview_window("main")
@@ -345,9 +337,35 @@ fn do_selection_capture(
         .emit("selection-captured", screenshot_data)
         .map_err(|e| format!("Failed to emit event: {}", e))?;
 
-    // 关闭选区窗口
+    // 隐藏选区窗口（不关闭，以便下次重用）
     if let Some(selection_window) = app.get_webview_window("selection-overlay") {
-        let _ = selection_window.close();
+        let _ = selection_window.hide();
+    }
+
+    // 显示并聚焦主窗口
+    let _ = main_window.show();
+    let _ = main_window.set_focus();
+
+    Ok(())
+}
+
+// 关闭选区窗口（用户放弃截图）
+#[tauri::command]
+fn close_selection_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Emitter;
+
+    // 获取主窗口
+    let main_window = app.get_webview_window("main")
+        .ok_or("Main window not found")?;
+
+    // 发送事件通知主窗口
+    main_window
+        .emit("selection-cancelled", ())
+        .map_err(|e| format!("Failed to emit event: {}", e))?;
+
+    // 隐藏选区窗口（不关闭，以便下次重用）
+    if let Some(selection_window) = app.get_webview_window("selection-overlay") {
+        let _ = selection_window.hide();
     }
 
     // 显示并聚焦主窗口
@@ -399,6 +417,7 @@ pub fn run() {
             update_shortcut,
             show_selection_window,
             do_selection_capture,
+            close_selection_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

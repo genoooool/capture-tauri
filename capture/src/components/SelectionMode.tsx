@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { doSelectionCapture } from '../services/tauriCommands';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { doSelectionCapture, closeSelectionWindow } from '../services/tauriCommands';
 
 export default function SelectionMode() {
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
@@ -11,8 +10,7 @@ export default function SelectionMode() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        const win = getCurrentWindow();
-        win.close().catch(console.error);
+        closeSelectionWindow().catch(console.error);
       }
     };
 
@@ -93,8 +91,7 @@ export default function SelectionMode() {
         <button
           onClick={(e) => {
             e.stopPropagation();
-            const win = getCurrentWindow();
-            win.close().catch(console.error);
+            closeSelectionWindow().catch(console.error);
           }}
           className="ml-4 px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
         >
@@ -149,7 +146,7 @@ export default function SelectionMode() {
 
           {/* 选区边框 */}
           <div
-            className="absolute border-2 border-indigo-500 pointer-events-none"
+            className="absolute border-2 border-white pointer-events-none"
             style={{
               left: selectionRect.x,
               top: selectionRect.y,
@@ -158,15 +155,15 @@ export default function SelectionMode() {
             }}
           >
             {/* 角落标记 */}
-            <div className="absolute -top-1 -left-1 w-3 h-3 bg-indigo-500" />
-            <div className="absolute -top-1 -right-1 w-3 h-3 bg-indigo-500" />
-            <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-indigo-500" />
-            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-indigo-500" />
+            <div className="absolute -top-1 -left-1 w-3 h-3 bg-white" />
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-white" />
+            <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-white" />
+            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-white" />
           </div>
 
           {/* 尺寸显示 */}
           <div
-            className="absolute bg-indigo-600 text-white text-xs px-2 py-1 rounded-md whitespace-nowrap"
+            className="absolute bg-slate-900/80 text-white text-xs px-2 py-1 rounded-md whitespace-nowrap"
             style={{
               left: selectionRect.x,
               top: selectionRect.y - 28,

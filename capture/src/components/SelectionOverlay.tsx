@@ -207,7 +207,7 @@ export default function SelectionOverlay({ onCapture, onCancel, screenshotDataUr
 
           {/* 选区边框 */}
           <div
-            className="absolute border-2 border-indigo-500 pointer-events-none"
+            className="absolute border-2 border-white pointer-events-none"
             style={{
               left: selectionRect.x,
               top: selectionRect.y,
@@ -216,15 +216,15 @@ export default function SelectionOverlay({ onCapture, onCancel, screenshotDataUr
             }}
           >
             {/* 角落标记 */}
-            <div className="absolute -top-1 -left-1 w-3 h-3 bg-indigo-500" />
-            <div className="absolute -top-1 -right-1 w-3 h-3 bg-indigo-500" />
-            <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-indigo-500" />
-            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-indigo-500" />
+            <div className="absolute -top-1 -left-1 w-3 h-3 bg-white" />
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-white" />
+            <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-white" />
+            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-white" />
           </div>
 
           {/* 尺寸显示 */}
           <div
-            className="absolute bg-indigo-600 text-white text-xs px-2 py-1 rounded-md whitespace-nowrap"
+            className="absolute bg-slate-900/80 text-white text-xs px-2 py-1 rounded-md whitespace-nowrap"
             style={{
               left: selectionRect.x,
               top: selectionRect.y - 28,

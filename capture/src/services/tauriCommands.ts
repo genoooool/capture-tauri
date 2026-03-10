@@ -123,3 +123,22 @@ export async function doSelectionCapture(area: CaptureArea): Promise<void> {
     throw error;
   }
 }
+
+// 关闭选区窗口（用户放弃截图）
+export async function closeSelectionWindow(): Promise<void> {
+  try {
+    await invoke<void>('close_selection_window');
+  } catch (error) {
+    console.error('Failed to close selection window:', error);
+    throw error;
+  }
+}
+
+// 监听选区取消事件
+export function onSelectionCancelled(callback: () => void): () => void {
+  const unlistenPromise = listen('selection-cancelled', callback);
+
+  return () => {
+    unlistenPromise.then((unlistenFn) => unlistenFn());
+  };
+}
